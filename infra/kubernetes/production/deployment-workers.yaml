@@ -1,0 +1,243 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ai-coaching-asr-worker
+  namespace: ai-coaching
+  labels:
+    app: ai-coaching-asr-worker
+    version: v1.0.0
+spec:
+  replicas: 2
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      app: ai-coaching-asr-worker
+  template:
+    metadata:
+      labels:
+        app: ai-coaching-asr-worker
+        version: v1.0.0
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8000"
+        prometheus.io/path: "/metrics"
+    spec:
+      containers:
+      - name: asr-worker
+        image: ai-coaching/asr-worker:latest
+        imagePullPolicy: Always
+        ports:
+        - containerPort: 8000
+          name: http
+        env:
+        - name: WORKER_TYPE
+          value: "asr"
+        - name: NATS_URL
+          valueFrom:
+            configMapKeyRef:
+              name: ai-coaching-config
+              key: NATS_URL
+        - name: REDIS_HOST
+          valueFrom:
+            configMapKeyRef:
+              name: ai-coaching-config
+              key: REDIS_HOST
+        - name: REDIS_PORT
+          valueFrom:
+            configMapKeyRef:
+              name: ai-coaching-config
+              key: REDIS_PORT
+        - name: REDIS_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: ai-coaching-secrets
+              key: REDIS_PASSWORD
+        - name: S3_ENDPOINT
+          valueFrom:
+            configMapKeyRef:
+              name: ai-coaching-config
+              key: S3_ENDPOINT
+        - name: S3_ACCESS_KEY
+          valueFrom:
+            secretKeyRef:
+              name: ai-coaching-secrets
+              key: S3_ACCESS_KEY
+        - name: S3_SECRET_KEY
+          valueFrom:
+            secretKeyRef:
+              name: ai-coaching-secrets
+              key: S3_SECRET_KEY
+        - name: S3_BUCKET
+          valueFrom:
+            configMapKeyRef:
+              name: ai-coaching-config
+              key: S3_BUCKET
+        resources:
+          requests:
+            cpu: 1000m
+            memory: 4Gi
+            nvidia.com/gpu: 1
+          limits:
+            cpu: 4000m
+            memory: 16Gi
+            nvidia.com/gpu: 1
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8000
+          initialDelaySeconds: 60
+          periodSeconds: 30
+          timeoutSeconds: 10
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /health/ready
+            port: 8000
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        volumeMounts:
+        - name: models
+          mountPath: /app/models
+        - name: logs
+          mountPath: /app/logs
+        - name: temp
+          mountPath: /app/temp
+      volumes:
+      - name: models
+        persistentVolumeClaim:
+          claimName: ai-coaching-models-pvc
+      - name: logs
+        emptyDir: {}
+      - name: temp
+        emptyDir: {}
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
+      imagePullSecrets:
+      - name: registry-secret
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ai-coaching-prosody-worker
+  namespace: ai-coaching
+  labels:
+    app: ai-coaching-prosody-worker
+    version: v1.0.0
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: ai-coaching-prosody-worker
+  template:
+    metadata:
+      labels:
+        app: ai-coaching-prosody-worker
+        version: v1.0.0
+    spec:
+      containers:
+      - name: prosody-worker
+        image: ai-coaching/prosody-worker:latest
+        imagePullPolicy: Always
+        ports:
+        - containerPort: 8000
+          name: http
+        env:
+        - name: WORKER_TYPE
+          value: "prosody"
+        - name: NATS_URL
+          valueFrom:
+            configMapKeyRef:
+              name: ai-coaching-config
+              key: NATS_URL
+        - name: REDIS_HOST
+          valueFrom:
+            configMapKeyRef:
+              name: ai-coaching-config
+              key: REDIS_HOST
+        - name: REDIS_PORT
+          valueFrom:
+            configMapKeyRef:
+              name: ai-coaching-config
+              key: REDIS_PORT
+        - name: REDIS_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: ai-coaching-secrets
+              key: REDIS_PASSWORD
+        resources:
+          requests:
+            cpu: 500m
+            memory: 2Gi
+          limits:
+            cpu: 2000m
+            memory: 8Gi
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8000
+          initialDelaySeconds: 30
+          periodSeconds: 30
+          timeoutSeconds: 10
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /health/ready
+            port: 8000
+          initialDelaySeconds: 15
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        volumeMounts:
+        - name: logs
+          mountPath: /app/logs
+        - name: temp
+          mountPath: /app/temp
+      volumes:
+      - name: logs
+        emptyDir: {}
+      - name: temp
+        emptyDir: {}
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
+      imagePullSecrets:
+      - name: registry-secret
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ai-coaching-workers-service
+  namespace: ai-coaching
+  labels:
+    app: ai-coaching-workers
+spec:
+  type: ClusterIP
+  ports:
+  - port: 8000
+    targetPort: 8000
+    protocol: TCP
+    name: http
+  selector:
+    app: ai-coaching-asr-worker
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: ai-coaching-models-pvc
+  namespace: ai-coaching
+spec:
+  accessModes:
+    - ReadWriteMany
+  resources:
+    requests:
+      storage: 100Gi
+  storageClassName: nfs-client

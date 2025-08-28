@@ -1,0 +1,45 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: ai-coaching
+  labels:
+    name: ai-coaching
+    environment: production
+    app: ai-coaching-platform
+---
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: ai-coaching-quota
+  namespace: ai-coaching
+spec:
+  hard:
+    requests.cpu: "16"
+    requests.memory: 32Gi
+    limits.cpu: "32"
+    limits.memory: 64Gi
+    persistentvolumeclaims: "10"
+    services: "20"
+    services.loadbalancers: "2"
+---
+apiVersion: v1
+kind: LimitRange
+metadata:
+  name: ai-coaching-limits
+  namespace: ai-coaching
+spec:
+  limits:
+  - default:
+      cpu: 500m
+      memory: 512Mi
+    defaultRequest:
+      cpu: 100m
+      memory: 128Mi
+    type: Container
+  - default:
+      cpu: 1000m
+      memory: 1Gi
+    defaultRequest:
+      cpu: 200m
+      memory: 256Mi
+    type: Pod

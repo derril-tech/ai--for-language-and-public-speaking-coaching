@@ -1,0 +1,355 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: ai-coaching-db-backup
+  namespace: ai-coaching
+  labels:
+    app: ai-coaching-backup
+spec:
+  schedule: "0 2 * * *"  # Daily at 2 AM
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 7
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      template:
+        metadata:
+          labels:
+            app: ai-coaching-backup
+        spec:
+          restartPolicy: OnFailure
+          containers:
+          - name: db-backup
+            image: postgres:16-alpine
+            command:
+            - /bin/bash
+            - -c
+            - |
+              set -e
+              
+              # Set timestamp
+              TIMESTAMP=$(date +%Y%m%d_%H%M%S)
+              BACKUP_FILE="ai-coaching-db-${TIMESTAMP}.sql"
+              
+              # Create backup
+              echo "Starting database backup..."
+              pg_dump -h $POSTGRES_HOST -p $POSTGRES_PORT -U $POSTGRES_USER -d $POSTGRES_DB > /backup/$BACKUP_FILE
+              
+              # Compress backup
+              gzip /backup/$BACKUP_FILE
+              
+              # Upload to S3/MinIO
+              echo "Uploading backup to S3..."
+              mc alias set s3 $S3_ENDPOINT $S3_ACCESS_KEY $S3_SECRET_KEY
+              mc cp /backup/${BACKUP_FILE}.gz s3/$S3_BUCKET/backups/database/
+              
+              # Clean up old backups (keep last 30 days)
+              echo "Cleaning up old backups..."
+              mc ls s3/$S3_BUCKET/backups/database/ | grep -E "ai-coaching-db-.*\.sql\.gz" | \
+                awk '{print $5}' | sort | head -n -30 | \
+                xargs -I {} mc rm s3/$S3_BUCKET/backups/database/{}
+              
+              echo "Database backup completed successfully"
+            env:
+            - name: POSTGRES_HOST
+              valueFrom:
+                configMapKeyRef:
+                  name: ai-coaching-config
+                  key: POSTGRES_HOST
+            - name: POSTGRES_PORT
+              valueFrom:
+                configMapKeyRef:
+                  name: ai-coaching-config
+                  key: POSTGRES_PORT
+            - name: POSTGRES_DB
+              valueFrom:
+                configMapKeyRef:
+                  name: ai-coaching-config
+                  key: POSTGRES_DB
+            - name: POSTGRES_USER
+              valueFrom:
+                secretKeyRef:
+                  name: ai-coaching-secrets
+                  key: POSTGRES_USER
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: ai-coaching-secrets
+                  key: POSTGRES_PASSWORD
+            - name: S3_ENDPOINT
+              valueFrom:
+                configMapKeyRef:
+                  name: ai-coaching-config
+                  key: S3_ENDPOINT
+            - name: S3_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: ai-coaching-secrets
+                  key: S3_ACCESS_KEY
+            - name: S3_SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: ai-coaching-secrets
+                  key: S3_SECRET_KEY
+            - name: S3_BUCKET
+              valueFrom:
+                configMapKeyRef:
+                  name: ai-coaching-config
+                  key: S3_BUCKET
+            - name: PGPASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: ai-coaching-secrets
+                  key: POSTGRES_PASSWORD
+            volumeMounts:
+            - name: backup-volume
+              mountPath: /backup
+          volumes:
+          - name: backup-volume
+            emptyDir: {}
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: ai-coaching-file-backup
+  namespace: ai-coaching
+  labels:
+    app: ai-coaching-backup
+spec:
+  schedule: "0 3 * * *"  # Daily at 3 AM
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 7
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      template:
+        metadata:
+          labels:
+            app: ai-coaching-backup
+        spec:
+          restartPolicy: OnFailure
+          containers:
+          - name: file-backup
+            image: minio/mc:latest
+            command:
+            - /bin/bash
+            - -c
+            - |
+              set -e
+              
+              # Set timestamp
+              TIMESTAMP=$(date +%Y%m%d_%H%M%S)
+              
+              # Configure MinIO client
+              mc alias set s3 $S3_ENDPOINT $S3_ACCESS_KEY $S3_SECRET_KEY
+              
+              # Create backup of media files
+              echo "Starting file backup..."
+              mc mirror s3/$S3_BUCKET/media s3/$S3_BUCKET/backups/files/media-${TIMESTAMP}/
+              
+              # Create backup of models
+              echo "Backing up AI models..."
+              mc mirror s3/$S3_BUCKET/models s3/$S3_BUCKET/backups/files/models-${TIMESTAMP}/
+              
+              # Clean up old backups (keep last 7 days)
+              echo "Cleaning up old file backups..."
+              mc ls s3/$S3_BUCKET/backups/files/ | grep -E "media-.*" | \
+                awk '{print $5}' | sort | head -n -7 | \
+                xargs -I {} mc rm --recursive s3/$S3_BUCKET/backups/files/{}
+              
+              mc ls s3/$S3_BUCKET/backups/files/ | grep -E "models-.*" | \
+                awk '{print $5}' | sort | head -n -7 | \
+                xargs -I {} mc rm --recursive s3/$S3_BUCKET/backups/files/{}
+              
+              echo "File backup completed successfully"
+            env:
+            - name: S3_ENDPOINT
+              valueFrom:
+                configMapKeyRef:
+                  name: ai-coaching-config
+                  key: S3_ENDPOINT
+            - name: S3_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: ai-coaching-secrets
+                  key: S3_ACCESS_KEY
+            - name: S3_SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: ai-coaching-secrets
+                  key: S3_SECRET_KEY
+            - name: S3_BUCKET
+              valueFrom:
+                configMapKeyRef:
+                  name: ai-coaching-config
+                  key: S3_BUCKET
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: ai-coaching-cleanup
+  namespace: ai-coaching
+  labels:
+    app: ai-coaching-cleanup
+spec:
+  schedule: "0 4 * * *"  # Daily at 4 AM
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      template:
+        metadata:
+          labels:
+            app: ai-coaching-cleanup
+        spec:
+          restartPolicy: OnFailure
+          containers:
+          - name: cleanup
+            image: postgres:16-alpine
+            command:
+            - /bin/bash
+            - -c
+            - |
+              set -e
+              
+              echo "Starting cleanup job..."
+              
+              # Connect to database
+              psql -h $POSTGRES_HOST -p $POSTGRES_PORT -U $POSTGRES_USER -d $POSTGRES_DB << EOF
+              
+              -- Clean up old sessions (older than 90 days)
+              DELETE FROM sessions 
+              WHERE created_at < NOW() - INTERVAL '90 days' 
+              AND status = 'completed';
+              
+              -- Clean up old metrics (older than 1 year)
+              DELETE FROM metrics 
+              WHERE timestamp < NOW() - INTERVAL '1 year';
+              
+              -- Clean up old audit logs (older than 2 years)
+              DELETE FROM audit_log 
+              WHERE created_at < NOW() - INTERVAL '2 years';
+              
+              -- Clean up old consent records (older than 5 years)
+              DELETE FROM consent_records 
+              WHERE granted_at < NOW() - INTERVAL '5 years';
+              
+              -- Clean up old deletion requests (older than 1 year)
+              DELETE FROM data_deletion_requests 
+              WHERE requested_at < NOW() - INTERVAL '1 year' 
+              AND status IN ('completed', 'failed');
+              
+              -- Vacuum and analyze
+              VACUUM ANALYZE;
+              
+              EOF
+              
+              echo "Cleanup completed successfully"
+            env:
+            - name: POSTGRES_HOST
+              valueFrom:
+                configMapKeyRef:
+                  name: ai-coaching-config
+                  key: POSTGRES_HOST
+            - name: POSTGRES_PORT
+              valueFrom:
+                configMapKeyRef:
+                  name: ai-coaching-config
+                  key: POSTGRES_PORT
+            - name: POSTGRES_DB
+              valueFrom:
+                configMapKeyRef:
+                  name: ai-coaching-config
+                  key: POSTGRES_DB
+            - name: POSTGRES_USER
+              valueFrom:
+                secretKeyRef:
+                  name: ai-coaching-secrets
+                  key: POSTGRES_USER
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: ai-coaching-secrets
+                  key: POSTGRES_PASSWORD
+            - name: PGPASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: ai-coaching-secrets
+                  key: POSTGRES_PASSWORD
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: ai-coaching-health-check
+  namespace: ai-coaching
+  labels:
+    app: ai-coaching-health-check
+spec:
+  schedule: "*/5 * * * *"  # Every 5 minutes
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      template:
+        metadata:
+          labels:
+            app: ai-coaching-health-check
+        spec:
+          restartPolicy: OnFailure
+          containers:
+          - name: health-check
+            image: curlimages/curl:latest
+            command:
+            - /bin/sh
+            - -c
+            - |
+              set -e
+              
+              echo "Starting health check..."
+              
+              # Check API Gateway
+              if ! curl -f -s http://ai-coaching-gateway-service/health > /dev/null; then
+                echo "ERROR: API Gateway health check failed"
+                exit 1
+              fi
+              
+              # Check Frontend
+              if ! curl -f -s http://ai-coaching-frontend-service/api/health > /dev/null; then
+                echo "ERROR: Frontend health check failed"
+                exit 1
+              fi
+              
+              # Check Database
+              if ! curl -f -s http://ai-coaching-postgres-service:5432 > /dev/null; then
+                echo "ERROR: Database health check failed"
+                exit 1
+              fi
+              
+              # Check Redis
+              if ! curl -f -s http://ai-coaching-redis-service:6379 > /dev/null; then
+                echo "ERROR: Redis health check failed"
+                exit 1
+              fi
+              
+              # Check NATS
+              if ! curl -f -s http://ai-coaching-nats-service:8222 > /dev/null; then
+                echo "ERROR: NATS health check failed"
+                exit 1
+              fi
+              
+              # Check MinIO
+              if ! curl -f -s http://ai-coaching-minio-service:9000/minio/health/live > /dev/null; then
+                echo "ERROR: MinIO health check failed"
+                exit 1
+              fi
+              
+              echo "All health checks passed"
+            resources:
+              requests:
+                cpu: 50m
+                memory: 64Mi
+              limits:
+                cpu: 100m
+                memory: 128Mi

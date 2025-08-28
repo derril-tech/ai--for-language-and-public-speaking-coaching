@@ -1,0 +1,115 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+rule_files:
+  - "rules/*.yml"
+
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets:
+          - alertmanager:9093
+
+scrape_configs:
+  # Prometheus itself
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+
+  # API Gateway
+  - job_name: 'ai-coaching-gateway'
+    static_configs:
+      - targets: ['gateway:3001']
+    metrics_path: '/metrics'
+    scrape_interval: 10s
+    scrape_timeout: 5s
+
+  # OpenTelemetry Collector
+  - job_name: 'otel-collector'
+    static_configs:
+      - targets: ['otel-collector:4318']
+    metrics_path: '/metrics'
+    scrape_interval: 10s
+
+  # Redis
+  - job_name: 'redis'
+    static_configs:
+      - targets: ['redis:6379']
+    metrics_path: '/metrics'
+    scrape_interval: 30s
+
+  # PostgreSQL
+  - job_name: 'postgres'
+    static_configs:
+      - targets: ['postgres:5432']
+    metrics_path: '/metrics'
+    scrape_interval: 30s
+
+  # NATS
+  - job_name: 'nats'
+    static_configs:
+      - targets: ['nats:8222']
+    metrics_path: '/metrics'
+    scrape_interval: 30s
+
+  # AI Workers
+  - job_name: 'asr-worker'
+    static_configs:
+      - targets: ['asr-worker:8000']
+    metrics_path: '/metrics'
+    scrape_interval: 15s
+
+  - job_name: 'prosody-worker'
+    static_configs:
+      - targets: ['prosody-worker:8000']
+    metrics_path: '/metrics'
+    scrape_interval: 15s
+
+  - job_name: 'fluency-worker'
+    static_configs:
+      - targets: ['fluency-worker:8000']
+    metrics_path: '/metrics'
+    scrape_interval: 15s
+
+  - job_name: 'scoring-worker'
+    static_configs:
+      - targets: ['scoring-worker:8000']
+    metrics_path: '/metrics'
+    scrape_interval: 15s
+
+  - job_name: 'drill-worker'
+    static_configs:
+      - targets: ['drill-worker:8000']
+    metrics_path: '/metrics'
+    scrape_interval: 15s
+
+  - job_name: 'clip-worker'
+    static_configs:
+      - targets: ['clip-worker:8000']
+    metrics_path: '/metrics'
+    scrape_interval: 15s
+
+  - job_name: 'report-worker'
+    static_configs:
+      - targets: ['report-worker:8000']
+    metrics_path: '/metrics'
+    scrape_interval: 15s
+
+  - job_name: 'search-worker'
+    static_configs:
+      - targets: ['search-worker:8000']
+    metrics_path: '/metrics'
+    scrape_interval: 15s
+
+  # Node Exporter for system metrics
+  - job_name: 'node-exporter'
+    static_configs:
+      - targets: ['node-exporter:9100']
+    scrape_interval: 30s
+
+  # cAdvisor for container metrics
+  - job_name: 'cadvisor'
+    static_configs:
+      - targets: ['cadvisor:8080']
+    scrape_interval: 30s

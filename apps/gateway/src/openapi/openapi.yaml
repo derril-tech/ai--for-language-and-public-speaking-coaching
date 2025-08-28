@@ -1,0 +1,1038 @@
+openapi: 3.1.0
+info:
+  title: AI Coaching API
+  description: API for AI-powered language and public speaking coaching
+  version: 1.0.0
+  contact:
+    name: AI Coaching Team
+    email: support@aicoaching.com
+  license:
+    name: MIT
+    url: https://opensource.org/licenses/MIT
+
+servers:
+  - url: http://localhost:4000/v1
+    description: Development server
+  - url: https://api.aicoaching.com/v1
+    description: Production server
+
+security:
+  - BearerAuth: []
+
+paths:
+  /health:
+    get:
+      summary: Health check
+      description: Check API health and status
+      responses:
+        '200':
+          description: API is healthy
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+                  name:
+                    type: string
+                  version:
+                    type: string
+                  timestamp:
+                    type: string
+                    format: date-time
+
+  /auth/login:
+    post:
+      summary: User login
+      description: Authenticate user and return JWT token
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - email
+                - password
+              properties:
+                email:
+                  type: string
+                  format: email
+                password:
+                  type: string
+                  minLength: 8
+      responses:
+        '200':
+          description: Login successful
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthResponse'
+        '401':
+          description: Invalid credentials
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+
+  /auth/refresh:
+    post:
+      summary: Refresh token
+      description: Refresh JWT token using refresh token
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - refresh_token
+              properties:
+                refresh_token:
+                  type: string
+      responses:
+        '200':
+          description: Token refreshed successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthResponse'
+        '401':
+          description: Invalid refresh token
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+
+  /me:
+    get:
+      summary: Get current user
+      description: Get current user profile and memberships
+      responses:
+        '200':
+          description: User profile retrieved
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserProfile'
+        '401':
+          description: Unauthorized
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+
+  /organizations:
+    get:
+      summary: List organizations
+      description: Get organizations the current user belongs to
+      responses:
+        '200':
+          description: Organizations retrieved
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  organizations:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Organization'
+
+  /organizations/{organizationId}/projects:
+    get:
+      summary: List projects
+      description: Get projects in an organization
+      parameters:
+        - name: organizationId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Projects retrieved
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  projects:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Project'
+
+    post:
+      summary: Create project
+      description: Create a new project in an organization
+      parameters:
+        - name: organizationId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - name
+              properties:
+                name:
+                  type: string
+                  maxLength: 255
+                description:
+                  type: string
+                settings:
+                  type: object
+      responses:
+        '201':
+          description: Project created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Project'
+
+  /projects/{projectId}/sessions:
+    get:
+      summary: List sessions
+      description: Get sessions in a project
+      parameters:
+        - name: projectId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Sessions retrieved
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  sessions:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Session'
+
+    post:
+      summary: Create session
+      description: Create a new session
+      parameters:
+        - name: projectId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - title
+              properties:
+                title:
+                  type: string
+                  maxLength: 255
+                metadata:
+                  type: object
+      responses:
+        '201':
+          description: Session created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Session'
+
+  /sessions/{sessionId}:
+    get:
+      summary: Get session
+      description: Get session details
+      parameters:
+        - name: sessionId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Session retrieved
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Session'
+
+    delete:
+      summary: Delete session
+      description: Delete a session and all associated data
+      parameters:
+        - name: sessionId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '204':
+          description: Session deleted
+
+  /sessions/{sessionId}/upload:
+    post:
+      summary: Upload audio
+      description: Get presigned URL for audio upload
+      parameters:
+        - name: sessionId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - filename
+                - content_type
+              properties:
+                filename:
+                  type: string
+                content_type:
+                  type: string
+                  pattern: '^audio/'
+      responses:
+        '200':
+          description: Upload URL generated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  upload_url:
+                    type: string
+                    format: uri
+                  expires_in:
+                    type: integer
+
+  /sessions/{sessionId}/process:
+    post:
+      summary: Process session
+      description: Start processing audio for ASR, metrics, and analysis
+      parameters:
+        - name: sessionId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '202':
+          description: Processing started
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    enum: [processing]
+
+  /sessions/{sessionId}/transcript:
+    get:
+      summary: Get transcript
+      description: Get session transcript with word timings
+      parameters:
+        - name: sessionId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Transcript retrieved
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Transcript'
+
+  /sessions/{sessionId}/metrics:
+    get:
+      summary: Get metrics
+      description: Get session metrics (WPM, pitch, etc.)
+      parameters:
+        - name: sessionId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: metric_type
+          in: query
+          schema:
+            type: string
+            enum: [wpm, pitch, volume, pauses]
+        - name: from
+          in: query
+          schema:
+            type: string
+            format: date-time
+        - name: to
+          in: query
+          schema:
+            type: string
+            format: date-time
+      responses:
+        '200':
+          description: Metrics retrieved
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  metrics:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Metric'
+
+  /sessions/{sessionId}/scores:
+    get:
+      summary: Get scores
+      description: Get session scoring results
+      parameters:
+        - name: sessionId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Scores retrieved
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Score'
+
+  /sessions/{sessionId}/fluency:
+    get:
+      summary: Get fluency analysis
+      description: Get fluency analysis including fillers and grammar
+      parameters:
+        - name: sessionId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Fluency analysis retrieved
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Fluency'
+
+  /sessions/{sessionId}/drills:
+    get:
+      summary: Get drills
+      description: Get recommended drills for the session
+      parameters:
+        - name: sessionId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Drills retrieved
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  drills:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Drill'
+
+  /sessions/{sessionId}/comments:
+    get:
+      summary: List comments
+      description: Get comments on a session
+      parameters:
+        - name: sessionId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Comments retrieved
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  comments:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Comment'
+
+    post:
+      summary: Add comment
+      description: Add a comment to a session
+      parameters:
+        - name: sessionId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - text
+              properties:
+                text:
+                  type: string
+                timestamp_seconds:
+                  type: number
+                  format: float
+      responses:
+        '201':
+          description: Comment added
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Comment'
+
+  /sessions/{sessionId}/clips:
+    post:
+      summary: Generate clip
+      description: Generate a clip from the session
+      parameters:
+        - name: sessionId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - start_time
+                - end_time
+              properties:
+                start_time:
+                  type: number
+                  format: float
+                end_time:
+                  type: number
+                  format: float
+                type:
+                  type: string
+                  enum: [best, stumble, custom]
+      responses:
+        '202':
+          description: Clip generation started
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  clip_id:
+                    type: string
+                    format: uuid
+
+  /reports:
+    post:
+      summary: Generate report
+      description: Generate a report for a session
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - session_id
+                - report_type
+              properties:
+                session_id:
+                  type: string
+                  format: uuid
+                report_type:
+                  type: string
+                  enum: [pdf, csv, json]
+                options:
+                  type: object
+      responses:
+        '202':
+          description: Report generation started
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  report_id:
+                    type: string
+                    format: uuid
+
+  /shares:
+    post:
+      summary: Create share
+      description: Create a share link for a session
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - session_id
+              properties:
+                session_id:
+                  type: string
+                  format: uuid
+                expires_in:
+                  type: integer
+                  description: Expiration time in seconds
+      responses:
+        '201':
+          description: Share created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Share'
+
+  /search:
+    post:
+      summary: Search sessions
+      description: Search sessions using semantic search
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - query
+              properties:
+                query:
+                  type: string
+                filters:
+                  type: object
+                limit:
+                  type: integer
+                  default: 10
+      responses:
+        '200':
+          description: Search results
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  results:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/SearchResult'
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  schemas:
+    Problem:
+      type: object
+      required:
+        - type
+        - title
+        - status
+      properties:
+        type:
+          type: string
+          format: uri
+        title:
+          type: string
+        status:
+          type: integer
+        detail:
+          type: string
+        instance:
+          type: string
+          format: uri
+
+    AuthResponse:
+      type: object
+      required:
+        - access_token
+        - token_type
+        - expires_in
+      properties:
+        access_token:
+          type: string
+        refresh_token:
+          type: string
+        token_type:
+          type: string
+          default: Bearer
+        expires_in:
+          type: integer
+
+    UserProfile:
+      type: object
+      required:
+        - id
+        - email
+      properties:
+        id:
+          type: string
+          format: uuid
+        email:
+          type: string
+          format: email
+        name:
+          type: string
+        avatar_url:
+          type: string
+          format: uri
+        memberships:
+          type: array
+          items:
+            $ref: '#/components/schemas/Membership'
+
+    Organization:
+      type: object
+      required:
+        - id
+        - name
+        - slug
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        slug:
+          type: string
+        settings:
+          type: object
+        created_at:
+          type: string
+          format: date-time
+
+    Membership:
+      type: object
+      required:
+        - organization_id
+        - role
+      properties:
+        organization_id:
+          type: string
+          format: uuid
+        role:
+          type: string
+          enum: [owner, admin, member, coach, student]
+        organization:
+          $ref: '#/components/schemas/Organization'
+
+    Project:
+      type: object
+      required:
+        - id
+        - name
+        - organization_id
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        description:
+          type: string
+        organization_id:
+          type: string
+          format: uuid
+        settings:
+          type: object
+        created_at:
+          type: string
+          format: date-time
+
+    Session:
+      type: object
+      required:
+        - id
+        - project_id
+        - user_id
+        - status
+      properties:
+        id:
+          type: string
+          format: uuid
+        project_id:
+          type: string
+          format: uuid
+        user_id:
+          type: string
+          format: uuid
+        title:
+          type: string
+        duration_seconds:
+          type: integer
+        audio_url:
+          type: string
+          format: uri
+        status:
+          type: string
+          enum: [processing, completed, failed]
+        metadata:
+          type: object
+        created_at:
+          type: string
+          format: date-time
+
+    Transcript:
+      type: object
+      required:
+        - id
+        - session_id
+        - text
+        - words
+      properties:
+        id:
+          type: string
+          format: uuid
+        session_id:
+          type: string
+          format: uuid
+        text:
+          type: string
+        words:
+          type: array
+          items:
+            type: object
+            properties:
+              word:
+                type: string
+              start:
+                type: number
+                format: float
+              end:
+                type: number
+                format: float
+              confidence:
+                type: number
+                format: float
+        language:
+          type: string
+
+    Metric:
+      type: object
+      required:
+        - time
+        - session_id
+        - metric_type
+        - value
+      properties:
+        time:
+          type: string
+          format: date-time
+        session_id:
+          type: string
+          format: uuid
+        metric_type:
+          type: string
+          enum: [wpm, pitch, volume, pauses]
+        value:
+          type: number
+        metadata:
+          type: object
+
+    Score:
+      type: object
+      required:
+        - id
+        - session_id
+        - rubric_version
+        - overall
+      properties:
+        id:
+          type: string
+          format: uuid
+        session_id:
+          type: string
+          format: uuid
+        rubric_version:
+          type: string
+        pronunciation:
+          type: number
+          format: float
+        prosody:
+          type: number
+          format: float
+        pace:
+          type: number
+          format: float
+        fluency:
+          type: number
+          format: float
+        clarity:
+          type: number
+          format: float
+        overall:
+          type: number
+          format: float
+        confidence_intervals:
+          type: object
+        created_at:
+          type: string
+          format: date-time
+
+    Fluency:
+      type: object
+      required:
+        - id
+        - session_id
+        - fillers_count
+      properties:
+        id:
+          type: string
+          format: uuid
+        session_id:
+          type: string
+          format: uuid
+        fillers_count:
+          type: integer
+        grammar_errors:
+          type: array
+          items:
+            type: object
+        style_suggestions:
+          type: array
+          items:
+            type: object
+        ttr_ratio:
+          type: number
+          format: float
+        created_at:
+          type: string
+          format: date-time
+
+    Drill:
+      type: object
+      required:
+        - id
+        - session_id
+        - drill_type
+        - content
+      properties:
+        id:
+          type: string
+          format: uuid
+        session_id:
+          type: string
+          format: uuid
+        drill_type:
+          type: string
+          enum: [minimal_pairs, pacing, shadowing]
+        content:
+          type: object
+        target_metrics:
+          type: object
+        created_at:
+          type: string
+          format: date-time
+
+    Comment:
+      type: object
+      required:
+        - id
+        - session_id
+        - user_id
+        - text
+      properties:
+        id:
+          type: string
+          format: uuid
+        session_id:
+          type: string
+          format: uuid
+        user_id:
+          type: string
+          format: uuid
+        timestamp_seconds:
+          type: number
+          format: float
+        text:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+
+    Share:
+      type: object
+      required:
+        - id
+        - session_id
+        - token
+      properties:
+        id:
+          type: string
+          format: uuid
+        session_id:
+          type: string
+          format: uuid
+        token:
+          type: string
+        expires_at:
+          type: string
+          format: date-time
+        created_at:
+          type: string
+          format: date-time
+
+    SearchResult:
+      type: object
+      required:
+        - session_id
+        - score
+      properties:
+        session_id:
+          type: string
+          format: uuid
+        score:
+          type: number
+          format: float
+        highlights:
+          type: array
+          items:
+            type: string

@@ -1,0 +1,117 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: ai-coaching-config
+  namespace: ai-coaching
+data:
+  # Application configuration
+  NODE_ENV: "production"
+  PORT: "3001"
+  FRONTEND_PORT: "3000"
+  
+  # Database configuration
+  POSTGRES_HOST: "postgres-service"
+  POSTGRES_PORT: "5432"
+  POSTGRES_DB: "ai_coaching"
+  
+  # Redis configuration
+  REDIS_HOST: "redis-service"
+  REDIS_PORT: "6379"
+  
+  # NATS configuration
+  NATS_URL: "nats://nats-service:4222"
+  
+  # S3/MinIO configuration
+  S3_ENDPOINT: "minio-service:9000"
+  S3_BUCKET: "ai-coaching-media"
+  S3_REGION: "us-east-1"
+  
+  # OpenTelemetry configuration
+  OTEL_ENABLED: "true"
+  OTEL_SERVICE_NAME: "ai-coaching-gateway"
+  OTEL_SERVICE_VERSION: "1.0.0"
+  OTEL_TRACE_ENDPOINT: "http://otel-collector:4318/v1/traces"
+  OTEL_METRIC_ENDPOINT: "http://otel-collector:4318/v1/metrics"
+  OTEL_EXPORT_INTERVAL: "10000"
+  
+  # Security configuration
+  JWT_SECRET: "your-jwt-secret-here"
+  JWT_EXPIRES_IN: "24h"
+  API_KEY_HEADER: "X-API-Key"
+  
+  # Rate limiting
+  RATE_LIMIT_WINDOW_MS: "900000"
+  RATE_LIMIT_MAX_REQUESTS: "100"
+  
+  # CORS configuration
+  ALLOWED_ORIGINS: "https://ai-coaching.com,https://www.ai-coaching.com"
+  
+  # File upload limits
+  MAX_FILE_SIZE: "100MB"
+  ALLOWED_FILE_TYPES: "audio/wav,audio/mp3,audio/m4a,video/mp4,video/webm"
+  
+  # Worker configuration
+  WORKER_TIMEOUT: "300000"
+  WORKER_RETRY_ATTEMPTS: "3"
+  WORKER_RETRY_DELAY: "5000"
+  
+  # Monitoring configuration
+  METRICS_ENABLED: "true"
+  HEALTH_CHECK_INTERVAL: "30"
+  HEALTH_CHECK_TIMEOUT: "5"
+  
+  # Logging configuration
+  LOG_LEVEL: "info"
+  LOG_FORMAT: "json"
+  
+  # Feature flags
+  ENABLE_GPU_WORKERS: "true"
+  ENABLE_REAL_TIME_PROCESSING: "true"
+  ENABLE_ADVANCED_ANALYTICS: "true"
+  
+  # Business configuration
+  MAX_SESSIONS_PER_USER: "100"
+  MAX_SESSION_DURATION: "3600"
+  MAX_CONCURRENT_PROCESSING: "10"
+  
+  # External services
+  SENTRY_DSN: "your-sentry-dsn-here"
+  STRIPE_SECRET_KEY: "your-stripe-secret-key-here"
+  STRIPE_WEBHOOK_SECRET: "your-stripe-webhook-secret-here"
+  
+  # Email configuration
+  SMTP_HOST: "smtp.gmail.com"
+  SMTP_PORT: "587"
+  SMTP_USER: "your-email@gmail.com"
+  SMTP_PASS: "your-app-password"
+  
+  # Notification configuration
+  ENABLE_EMAIL_NOTIFICATIONS: "true"
+  ENABLE_PUSH_NOTIFICATIONS: "false"
+  ENABLE_SMS_NOTIFICATIONS: "false"
+  
+  # Analytics configuration
+  GOOGLE_ANALYTICS_ID: "your-ga-id-here"
+  MIXPANEL_TOKEN: "your-mixpanel-token-here"
+  
+  # CDN configuration
+  CDN_URL: "https://cdn.ai-coaching.com"
+  CDN_ENABLED: "true"
+  
+  # Cache configuration
+  CACHE_TTL: "3600"
+  CACHE_MAX_SIZE: "1000"
+  
+  # Backup configuration
+  BACKUP_ENABLED: "true"
+  BACKUP_SCHEDULE: "0 2 * * *"
+  BACKUP_RETENTION_DAYS: "30"
+  
+  # Maintenance configuration
+  MAINTENANCE_MODE: "false"
+  MAINTENANCE_MESSAGE: "System is under maintenance. Please try again later."
+  
+  # Development/Testing
+  ENABLE_DEBUG_MODE: "false"
+  ENABLE_TEST_ENDPOINTS: "false"
+  ENABLE_MOCK_DATA: "false"

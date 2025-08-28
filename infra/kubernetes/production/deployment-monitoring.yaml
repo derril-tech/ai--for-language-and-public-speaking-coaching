@@ -1,0 +1,368 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ai-coaching-prometheus
+  namespace: ai-coaching
+  labels:
+    app: ai-coaching-prometheus
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: ai-coaching-prometheus
+  template:
+    metadata:
+      labels:
+        app: ai-coaching-prometheus
+    spec:
+      containers:
+      - name: prometheus
+        image: prom/prometheus:latest
+        ports:
+        - containerPort: 9090
+          name: http
+        command:
+        - /bin/prometheus
+        - --config.file=/etc/prometheus/prometheus.yml
+        - --storage.tsdb.path=/prometheus
+        - --web.console.libraries=/etc/prometheus/console_libraries
+        - --web.console.templates=/etc/prometheus/consoles
+        - --storage.tsdb.retention.time=30d
+        - --web.enable-lifecycle
+        resources:
+          requests:
+            cpu: 250m
+            memory: 1Gi
+          limits:
+            cpu: 1000m
+            memory: 4Gi
+        volumeMounts:
+        - name: prometheus-config
+          mountPath: /etc/prometheus
+        - name: prometheus-data
+          mountPath: /prometheus
+        livenessProbe:
+          httpGet:
+            path: /-/healthy
+            port: 9090
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /-/ready
+            port: 9090
+          initialDelaySeconds: 5
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 3
+      volumes:
+      - name: prometheus-config
+        configMap:
+          name: ai-coaching-prometheus-config
+      - name: prometheus-data
+        persistentVolumeClaim:
+          claimName: ai-coaching-prometheus-pvc
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: ai-coaching-prometheus-config
+  namespace: ai-coaching
+data:
+  prometheus.yml: |
+    global:
+      scrape_interval: 15s
+      evaluation_interval: 15s
+    
+    rule_files:
+      - "rules/*.yml"
+    
+    scrape_configs:
+      - job_name: 'prometheus'
+        static_configs:
+          - targets: ['localhost:9090']
+    
+      - job_name: 'ai-coaching-gateway'
+        kubernetes_sd_configs:
+          - role: pod
+        relabel_configs:
+          - source_labels: [__meta_kubernetes_pod_label_app]
+            regex: ai-coaching-gateway
+            action: keep
+          - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_scrape]
+            regex: "true"
+            action: keep
+          - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_path]
+            action: replace
+            target_label: __metrics_path__
+            regex: (.+)
+          - source_labels: [__address__, __meta_kubernetes_pod_annotation_prometheus_io_port]
+            action: replace
+            regex: ([^:]+)(?::\d+)?;(\d+)
+            replacement: $1:$2
+            target_label: __address__
+          - source_labels: [__meta_kubernetes_namespace]
+            action: replace
+            target_label: kubernetes_namespace
+          - source_labels: [__meta_kubernetes_pod_name]
+            action: replace
+            target_label: kubernetes_pod_name
+    
+      - job_name: 'ai-coaching-frontend'
+        kubernetes_sd_configs:
+          - role: pod
+        relabel_configs:
+          - source_labels: [__meta_kubernetes_pod_label_app]
+            regex: ai-coaching-frontend
+            action: keep
+          - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_scrape]
+            regex: "true"
+            action: keep
+          - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_path]
+            action: replace
+            target_label: __metrics_path__
+            regex: (.+)
+          - source_labels: [__address__, __meta_kubernetes_pod_annotation_prometheus_io_port]
+            action: replace
+            regex: ([^:]+)(?::\d+)?;(\d+)
+            replacement: $1:$2
+            target_label: __address__
+          - source_labels: [__meta_kubernetes_namespace]
+            action: replace
+            target_label: kubernetes_namespace
+          - source_labels: [__meta_kubernetes_pod_name]
+            action: replace
+            target_label: kubernetes_pod_name
+    
+      - job_name: 'ai-coaching-workers'
+        kubernetes_sd_configs:
+          - role: pod
+        relabel_configs:
+          - source_labels: [__meta_kubernetes_pod_label_app]
+            regex: ai-coaching-.*-worker
+            action: keep
+          - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_scrape]
+            regex: "true"
+            action: keep
+          - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_path]
+            action: replace
+            target_label: __metrics_path__
+            regex: (.+)
+          - source_labels: [__address__, __meta_kubernetes_pod_annotation_prometheus_io_port]
+            action: replace
+            regex: ([^:]+)(?::\d+)?;(\d+)
+            replacement: $1:$2
+            target_label: __address__
+          - source_labels: [__meta_kubernetes_namespace]
+            action: replace
+            target_label: kubernetes_namespace
+          - source_labels: [__meta_kubernetes_pod_name]
+            action: replace
+            target_label: kubernetes_pod_name
+    
+      - job_name: 'redis'
+        static_configs:
+          - targets: ['ai-coaching-redis-service:6379']
+    
+      - job_name: 'postgres'
+        static_configs:
+          - targets: ['ai-coaching-postgres-service:5432']
+    
+      - job_name: 'nats'
+        static_configs:
+          - targets: ['ai-coaching-nats-service:8222']
+    
+      - job_name: 'minio'
+        static_configs:
+          - targets: ['ai-coaching-minio-service:9000']
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: ai-coaching-prometheus-pvc
+  namespace: ai-coaching
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 50Gi
+  storageClassName: fast-ssd
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ai-coaching-prometheus-service
+  namespace: ai-coaching
+  labels:
+    app: ai-coaching-prometheus
+spec:
+  type: ClusterIP
+  ports:
+  - port: 9090
+    targetPort: 9090
+    protocol: TCP
+    name: http
+  selector:
+    app: ai-coaching-prometheus
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ai-coaching-grafana
+  namespace: ai-coaching
+  labels:
+    app: ai-coaching-grafana
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: ai-coaching-grafana
+  template:
+    metadata:
+      labels:
+        app: ai-coaching-grafana
+    spec:
+      containers:
+      - name: grafana
+        image: grafana/grafana:latest
+        ports:
+        - containerPort: 3000
+          name: http
+        env:
+        - name: GF_SECURITY_ADMIN_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: ai-coaching-secrets
+              key: GRAFANA_PASSWORD
+        - name: GF_INSTALL_PLUGINS
+          value: "grafana-piechart-panel,grafana-worldmap-panel"
+        resources:
+          requests:
+            cpu: 250m
+            memory: 512Mi
+          limits:
+            cpu: 1000m
+            memory: 2Gi
+        volumeMounts:
+        - name: grafana-config
+          mountPath: /etc/grafana/provisioning
+        - name: grafana-data
+          mountPath: /var/lib/grafana
+        livenessProbe:
+          httpGet:
+            path: /api/health
+            port: 3000
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /api/health
+            port: 3000
+          initialDelaySeconds: 5
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 3
+      volumes:
+      - name: grafana-config
+        configMap:
+          name: ai-coaching-grafana-config
+      - name: grafana-data
+        persistentVolumeClaim:
+          claimName: ai-coaching-grafana-pvc
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: ai-coaching-grafana-config
+  namespace: ai-coaching
+data:
+  datasources/datasources.yml: |
+    apiVersion: 1
+    datasources:
+      - name: Prometheus
+        type: prometheus
+        url: http://ai-coaching-prometheus-service:9090
+        access: proxy
+        isDefault: true
+        editable: true
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: ai-coaching-grafana-pvc
+  namespace: ai-coaching
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 10Gi
+  storageClassName: fast-ssd
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ai-coaching-grafana-service
+  namespace: ai-coaching
+  labels:
+    app: ai-coaching-grafana
+spec:
+  type: ClusterIP
+  ports:
+  - port: 3000
+    targetPort: 3000
+    protocol: TCP
+    name: http
+  selector:
+    app: ai-coaching-grafana
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: ai-coaching-monitoring-ingress
+  namespace: ai-coaching
+  annotations:
+    kubernetes.io/ingress.class: "nginx"
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/auth-type: "basic"
+    nginx.ingress.kubernetes.io/auth-secret: "monitoring-auth"
+    nginx.ingress.kubernetes.io/auth-realm: "Monitoring"
+spec:
+  tls:
+  - hosts:
+    - monitoring.ai-coaching.com
+    secretName: ai-coaching-monitoring-tls
+  rules:
+  - host: monitoring.ai-coaching.com
+    http:
+      paths:
+      - path: /grafana
+        pathType: Prefix
+        backend:
+          service:
+            name: ai-coaching-grafana-service
+            port:
+              number: 3000
+      - path: /prometheus
+        pathType: Prefix
+        backend:
+          service:
+            name: ai-coaching-prometheus-service
+            port:
+              number: 9090
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: monitoring-auth
+  namespace: ai-coaching
+type: Opaque
+data:
+  auth: YWRtaW46JGFwcjEkT1h6T1h6T1h6JDVkYzVkYzVkYzVkYzVkYzVkYzVkYzVkYzVkYzVkYwo=  # admin:password

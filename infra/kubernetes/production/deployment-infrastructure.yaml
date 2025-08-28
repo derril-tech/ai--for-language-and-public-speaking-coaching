@@ -1,0 +1,510 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: ai-coaching-postgres
+  namespace: ai-coaching
+  labels:
+    app: ai-coaching-postgres
+spec:
+  serviceName: ai-coaching-postgres-service
+  replicas: 1
+  selector:
+    matchLabels:
+      app: ai-coaching-postgres
+  template:
+    metadata:
+      labels:
+        app: ai-coaching-postgres
+    spec:
+      containers:
+      - name: postgres
+        image: postgres:16-alpine
+        ports:
+        - containerPort: 5432
+          name: postgres
+        env:
+        - name: POSTGRES_DB
+          valueFrom:
+            configMapKeyRef:
+              name: ai-coaching-config
+              key: POSTGRES_DB
+        - name: POSTGRES_USER
+          valueFrom:
+            secretKeyRef:
+              name: ai-coaching-secrets
+              key: POSTGRES_USER
+        - name: POSTGRES_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: ai-coaching-secrets
+              key: POSTGRES_PASSWORD
+        - name: POSTGRES_INITDB_ARGS
+          value: "--auth-host=scram-sha-256"
+        resources:
+          requests:
+            cpu: 500m
+            memory: 2Gi
+          limits:
+            cpu: 2000m
+            memory: 8Gi
+        volumeMounts:
+        - name: postgres-data
+          mountPath: /var/lib/postgresql/data
+        - name: postgres-config
+          mountPath: /etc/postgresql/postgresql.conf
+          subPath: postgresql.conf
+        livenessProbe:
+          exec:
+            command:
+            - pg_isready
+            - -U
+            - postgres
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        readinessProbe:
+          exec:
+            command:
+            - pg_isready
+            - -U
+            - postgres
+          initialDelaySeconds: 5
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 3
+      volumes:
+      - name: postgres-config
+        configMap:
+          name: ai-coaching-postgres-config
+  volumeClaimTemplates:
+  - metadata:
+      name: postgres-data
+    spec:
+      accessModes: ["ReadWriteOnce"]
+      resources:
+        requests:
+          storage: 100Gi
+      storageClassName: fast-ssd
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: ai-coaching-postgres-config
+  namespace: ai-coaching
+data:
+  postgresql.conf: |
+    # Basic settings
+    max_connections = 200
+    shared_buffers = 256MB
+    effective_cache_size = 1GB
+    maintenance_work_mem = 64MB
+    checkpoint_completion_target = 0.9
+    wal_buffers = 16MB
+    default_statistics_target = 100
+    random_page_cost = 1.1
+    effective_io_concurrency = 200
+    
+    # Logging
+    log_destination = 'stderr'
+    logging_collector = on
+    log_directory = 'log'
+    log_filename = 'postgresql-%Y-%m-%d_%H%M%S.log'
+    log_statement = 'all'
+    log_min_duration_statement = 1000
+    
+    # TimescaleDB settings
+    shared_preload_libraries = 'timescaledb'
+    timescaledb.max_background_workers = 8
+    
+    # Extensions
+    shared_preload_libraries = 'timescaledb,pg_stat_statements'
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ai-coaching-postgres-service
+  namespace: ai-coaching
+  labels:
+    app: ai-coaching-postgres
+spec:
+  type: ClusterIP
+  ports:
+  - port: 5432
+    targetPort: 5432
+    protocol: TCP
+    name: postgres
+  selector:
+    app: ai-coaching-postgres
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: ai-coaching-redis
+  namespace: ai-coaching
+  labels:
+    app: ai-coaching-redis
+spec:
+  serviceName: ai-coaching-redis-service
+  replicas: 1
+  selector:
+    matchLabels:
+      app: ai-coaching-redis
+  template:
+    metadata:
+      labels:
+        app: ai-coaching-redis
+    spec:
+      containers:
+      - name: redis
+        image: redis:7-alpine
+        ports:
+        - containerPort: 6379
+          name: redis
+        command:
+        - redis-server
+        - /etc/redis/redis.conf
+        env:
+        - name: REDIS_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: ai-coaching-secrets
+              key: REDIS_PASSWORD
+        resources:
+          requests:
+            cpu: 250m
+            memory: 1Gi
+          limits:
+            cpu: 1000m
+            memory: 4Gi
+        volumeMounts:
+        - name: redis-data
+          mountPath: /data
+        - name: redis-config
+          mountPath: /etc/redis/redis.conf
+          subPath: redis.conf
+        livenessProbe:
+          exec:
+            command:
+            - redis-cli
+            - ping
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        readinessProbe:
+          exec:
+            command:
+            - redis-cli
+            - ping
+          initialDelaySeconds: 5
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 3
+      volumes:
+      - name: redis-config
+        configMap:
+          name: ai-coaching-redis-config
+  volumeClaimTemplates:
+  - metadata:
+      name: redis-data
+    spec:
+      accessModes: ["ReadWriteOnce"]
+      resources:
+        requests:
+          storage: 50Gi
+      storageClassName: fast-ssd
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: ai-coaching-redis-config
+  namespace: ai-coaching
+data:
+  redis.conf: |
+    # Basic settings
+    bind 0.0.0.0
+    port 6379
+    timeout 0
+    tcp-keepalive 300
+    daemonize no
+    supervised no
+    pidfile /var/run/redis_6379.pid
+    loglevel notice
+    logfile ""
+    databases 16
+    
+    # Memory settings
+    maxmemory 3gb
+    maxmemory-policy allkeys-lru
+    
+    # Persistence
+    save 900 1
+    save 300 10
+    save 60 10000
+    stop-writes-on-bgsave-error yes
+    rdbcompression yes
+    rdbchecksum yes
+    dbfilename dump.rdb
+    dir /data
+    
+    # Security
+    requirepass ${REDIS_PASSWORD}
+    
+    # Performance
+    tcp-backlog 511
+    unixsocket /tmp/redis.sock
+    unixsocketperm 700
+    close-on-slave-write yes
+    slave-read-only yes
+    repl-diskless-sync no
+    repl-diskless-sync-delay 5
+    repl-ping-slave-period 10
+    repl-timeout 60
+    repl-disable-tcp-nodelay no
+    repl-backlog-size 1mb
+    repl-backlog-ttl 3600
+    maxclients 10000
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ai-coaching-redis-service
+  namespace: ai-coaching
+  labels:
+    app: ai-coaching-redis
+spec:
+  type: ClusterIP
+  ports:
+  - port: 6379
+    targetPort: 6379
+    protocol: TCP
+    name: redis
+  selector:
+    app: ai-coaching-redis
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: ai-coaching-nats
+  namespace: ai-coaching
+  labels:
+    app: ai-coaching-nats
+spec:
+  serviceName: ai-coaching-nats-service
+  replicas: 1
+  selector:
+    matchLabels:
+      app: ai-coaching-nats
+  template:
+    metadata:
+      labels:
+        app: ai-coaching-nats
+    spec:
+      containers:
+      - name: nats
+        image: nats:2-alpine
+        ports:
+        - containerPort: 4222
+          name: client
+        - containerPort: 8222
+          name: http
+        command:
+        - nats-server
+        - -c
+        - /etc/nats/nats.conf
+        resources:
+          requests:
+            cpu: 250m
+            memory: 512Mi
+          limits:
+            cpu: 1000m
+            memory: 2Gi
+        volumeMounts:
+        - name: nats-config
+          mountPath: /etc/nats/nats.conf
+          subPath: nats.conf
+        livenessProbe:
+          httpGet:
+            path: /
+            port: 8222
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /
+            port: 8222
+          initialDelaySeconds: 5
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 3
+      volumes:
+      - name: nats-config
+        configMap:
+          name: ai-coaching-nats-config
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: ai-coaching-nats-config
+  namespace: ai-coaching
+data:
+  nats.conf: |
+    # NATS Server Configuration
+    port: 4222
+    http_port: 8222
+    
+    # JetStream Configuration
+    jetstream {
+      store_dir: "/data"
+      max_mem: 1GB
+      max_file: 10GB
+    }
+    
+    # Authentication
+    authorization {
+      user: nats
+      password: nats123
+      timeout: 2
+    }
+    
+    # Logging
+    debug: false
+    trace: false
+    logtime: true
+    
+    # Performance
+    max_connections: 65536
+    max_subscriptions: 0
+    max_payload: 1048576
+    max_pending: 67108864
+    max_control_line: 4096
+    ping_interval: 120000000000
+    ping_max: 2
+    write_deadline: 2000000000
+    max_outstanding_catchup: 256
+    lame_duck_duration: 30000000000
+    lame_duck_grace_period: 10000000000
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ai-coaching-nats-service
+  namespace: ai-coaching
+  labels:
+    app: ai-coaching-nats
+spec:
+  type: ClusterIP
+  ports:
+  - port: 4222
+    targetPort: 4222
+    protocol: TCP
+    name: client
+  - port: 8222
+    targetPort: 8222
+    protocol: TCP
+    name: http
+  selector:
+    app: ai-coaching-nats
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: ai-coaching-minio
+  namespace: ai-coaching
+  labels:
+    app: ai-coaching-minio
+spec:
+  serviceName: ai-coaching-minio-service
+  replicas: 1
+  selector:
+    matchLabels:
+      app: ai-coaching-minio
+  template:
+    metadata:
+      labels:
+        app: ai-coaching-minio
+    spec:
+      containers:
+      - name: minio
+        image: minio/minio:latest
+        ports:
+        - containerPort: 9000
+          name: api
+        - containerPort: 9001
+          name: console
+        command:
+        - /bin/bash
+        - -c
+        - |
+          mkdir -p /data/ai-coaching-media
+          minio server /data --console-address ":9001"
+        env:
+        - name: MINIO_ROOT_USER
+          valueFrom:
+            secretKeyRef:
+              name: ai-coaching-secrets
+              key: S3_ACCESS_KEY
+        - name: MINIO_ROOT_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: ai-coaching-secrets
+              key: S3_SECRET_KEY
+        resources:
+          requests:
+            cpu: 250m
+            memory: 1Gi
+          limits:
+            cpu: 1000m
+            memory: 4Gi
+        volumeMounts:
+        - name: minio-data
+          mountPath: /data
+        livenessProbe:
+          httpGet:
+            path: /minio/health/live
+            port: 9000
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /minio/health/ready
+            port: 9000
+          initialDelaySeconds: 5
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 3
+  volumeClaimTemplates:
+  - metadata:
+      name: minio-data
+    spec:
+      accessModes: ["ReadWriteOnce"]
+      resources:
+        requests:
+          storage: 500Gi
+      storageClassName: fast-ssd
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ai-coaching-minio-service
+  namespace: ai-coaching
+  labels:
+    app: ai-coaching-minio
+spec:
+  type: ClusterIP
+  ports:
+  - port: 9000
+    targetPort: 9000
+    protocol: TCP
+    name: api
+  - port: 9001
+    targetPort: 9001
+    protocol: TCP
+    name: console
+  selector:
+    app: ai-coaching-minio

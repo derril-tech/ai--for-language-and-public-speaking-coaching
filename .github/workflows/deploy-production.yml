@@ -1,0 +1,309 @@
+name: Deploy to Production
+
+on:
+  push:
+    branches: [main]
+    tags: [v*]
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment to deploy to'
+        required: true
+        default: 'production'
+        type: choice
+        options:
+          - production
+          - staging
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Setup Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          cd apps/frontend && npm ci
+          cd ../gateway && npm ci
+          cd ../../apps/workers && pip install -r requirements.txt
+
+      - name: Run tests
+        run: |
+          cd apps/frontend && npm test
+          cd ../gateway && npm test
+          cd ../../apps/workers && python -m pytest
+
+      - name: Run security scans
+        run: |
+          npm audit --audit-level=high
+          pip-audit
+
+  build-and-push:
+    needs: test
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=ref,event=branch
+            type=ref,event=pr
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=sha
+
+      - name: Build and push Gateway image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./apps/gateway
+          file: ./infra/docker/production/Dockerfile.gateway
+          push: true
+          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/gateway:${{ steps.meta.outputs.version }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Build and push Frontend image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./apps/frontend
+          file: ./infra/docker/production/Dockerfile.frontend
+          push: true
+          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/frontend:${{ steps.meta.outputs.version }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Build and push ASR Worker image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./apps/workers/asr
+          file: ./infra/docker/production/Dockerfile.worker
+          push: true
+          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/asr-worker:${{ steps.meta.outputs.version }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Build and push Prosody Worker image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./apps/workers/prosody
+          file: ./infra/docker/production/Dockerfile.worker
+          push: true
+          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/prosody-worker:${{ steps.meta.outputs.version }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Build and push Fluency Worker image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./apps/workers/fluency
+          file: ./infra/docker/production/Dockerfile.worker
+          push: true
+          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/fluency-worker:${{ steps.meta.outputs.version }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Build and push Scoring Worker image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./apps/workers/scoring
+          file: ./infra/docker/production/Dockerfile.worker
+          push: true
+          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/scoring-worker:${{ steps.meta.outputs.version }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Build and push Drill Worker image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./apps/workers/drill
+          file: ./infra/docker/production/Dockerfile.worker
+          push: true
+          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/drill-worker:${{ steps.meta.outputs.version }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Build and push Clip Worker image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./apps/workers/clip
+          file: ./infra/docker/production/Dockerfile.worker
+          push: true
+          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/clip-worker:${{ steps.meta.outputs.version }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Build and push Report Worker image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./apps/workers/report
+          file: ./infra/docker/production/Dockerfile.worker
+          push: true
+          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/report-worker:${{ steps.meta.outputs.version }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Build and push Search Worker image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./apps/workers/search
+          file: ./infra/docker/production/Dockerfile.worker
+          push: true
+          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/search-worker:${{ steps.meta.outputs.version }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  deploy:
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup kubectl
+        uses: azure/setup-kubectl@v3
+        with:
+          version: 'latest'
+
+      - name: Configure kubectl
+        run: |
+          echo "${{ secrets.KUBE_CONFIG }}" | base64 -d > kubeconfig.yaml
+          export KUBECONFIG=kubeconfig.yaml
+
+      - name: Deploy to Kubernetes
+        run: |
+          # Update image tags in kustomization
+          cd infra/kubernetes/production
+          
+          # Update image tags to latest version
+          kustomize edit set image ai-coaching/gateway=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/gateway:${{ steps.meta.outputs.version }}
+          kustomize edit set image ai-coaching/frontend=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/frontend:${{ steps.meta.outputs.version }}
+          kustomize edit set image ai-coaching/asr-worker=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/asr-worker:${{ steps.meta.outputs.version }}
+          kustomize edit set image ai-coaching/prosody-worker=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/prosody-worker:${{ steps.meta.outputs.version }}
+          kustomize edit set image ai-coaching/fluency-worker=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/fluency-worker:${{ steps.meta.outputs.version }}
+          kustomize edit set image ai-coaching/scoring-worker=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/scoring-worker:${{ steps.meta.outputs.version }}
+          kustomize edit set image ai-coaching/drill-worker=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/drill-worker:${{ steps.meta.outputs.version }}
+          kustomize edit set image ai-coaching/clip-worker=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/clip-worker:${{ steps.meta.outputs.version }}
+          kustomize edit set image ai-coaching/report-worker=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/report-worker:${{ steps.meta.outputs.version }}
+          kustomize edit set image ai-coaching/search-worker=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/search-worker:${{ steps.meta.outputs.version }}
+          
+          # Apply the deployment
+          kustomize build . | kubectl apply -f -
+          
+          # Wait for deployment to be ready
+          kubectl rollout status deployment/ai-coaching-gateway -n ai-coaching --timeout=300s
+          kubectl rollout status deployment/ai-coaching-frontend -n ai-coaching --timeout=300s
+          kubectl rollout status deployment/ai-coaching-asr-worker -n ai-coaching --timeout=300s
+
+      - name: Run post-deployment tests
+        run: |
+          # Wait for services to be ready
+          sleep 30
+          
+          # Test API Gateway
+          curl -f https://api.ai-coaching.com/health || exit 1
+          
+          # Test Frontend
+          curl -f https://ai-coaching.com/api/health || exit 1
+          
+          # Test WebSocket connection
+          curl -f -I https://api.ai-coaching.com/ws || exit 1
+
+      - name: Notify deployment success
+        if: success()
+        uses: 8398a7/action-slack@v3
+        with:
+          status: success
+          text: "Production deployment successful! 🚀"
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+
+      - name: Notify deployment failure
+        if: failure()
+        uses: 8398a7/action-slack@v3
+        with:
+          status: failure
+          text: "Production deployment failed! ❌"
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+
+  rollback:
+    needs: deploy
+    if: failure()
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup kubectl
+        uses: azure/setup-kubectl@v3
+        with:
+          version: 'latest'
+
+      - name: Configure kubectl
+        run: |
+          echo "${{ secrets.KUBE_CONFIG }}" | base64 -d > kubeconfig.yaml
+          export KUBECONFIG=kubeconfig.yaml
+
+      - name: Rollback deployment
+        run: |
+          kubectl rollout undo deployment/ai-coaching-gateway -n ai-coaching
+          kubectl rollout undo deployment/ai-coaching-frontend -n ai-coaching
+          kubectl rollout undo deployment/ai-coaching-asr-worker -n ai-coaching
+          
+          kubectl rollout status deployment/ai-coaching-gateway -n ai-coaching --timeout=300s
+          kubectl rollout status deployment/ai-coaching-frontend -n ai-coaching --timeout=300s
+          kubectl rollout status deployment/ai-coaching-asr-worker -n ai-coaching --timeout=300s
+
+      - name: Notify rollback
+        uses: 8398a7/action-slack@v3
+        with:
+          status: success
+          text: "Production deployment rolled back! 🔄"
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}

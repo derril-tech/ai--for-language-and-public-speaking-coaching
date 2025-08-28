@@ -1,0 +1,179 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+metadata:
+  name: ai-coaching-production
+
+namespace: ai-coaching
+
+resources:
+  # Core infrastructure
+  - namespace.yaml
+  - configmap.yaml
+  - secrets.yaml
+  
+  # Infrastructure services
+  - deployment-infrastructure.yaml
+  
+  # Application services
+  - deployment-gateway.yaml
+  - deployment-frontend.yaml
+  - deployment-workers.yaml
+  
+  # Monitoring and observability
+  - deployment-monitoring.yaml
+  
+  # Backup and maintenance
+  - backup-cronjob.yaml
+
+commonLabels:
+  app.kubernetes.io/name: ai-coaching
+  app.kubernetes.io/instance: production
+  app.kubernetes.io/version: v1.0.0
+  app.kubernetes.io/component: platform
+
+commonAnnotations:
+  kubernetes.io/change-cause: "Production deployment v1.0.0"
+
+images:
+  - name: ai-coaching/gateway
+    newTag: v1.0.0
+  - name: ai-coaching/frontend
+    newTag: v1.0.0
+  - name: ai-coaching/asr-worker
+    newTag: v1.0.0
+  - name: ai-coaching/prosody-worker
+    newTag: v1.0.0
+  - name: ai-coaching/fluency-worker
+    newTag: v1.0.0
+  - name: ai-coaching/scoring-worker
+    newTag: v1.0.0
+  - name: ai-coaching/drill-worker
+    newTag: v1.0.0
+  - name: ai-coaching/clip-worker
+    newTag: v1.0.0
+  - name: ai-coaching/report-worker
+    newTag: v1.0.0
+  - name: ai-coaching/search-worker
+    newTag: v1.0.0
+
+configMapGenerator:
+  - name: ai-coaching-config
+    behavior: merge
+    literals:
+      - ENVIRONMENT=production
+      - LOG_LEVEL=info
+      - METRICS_ENABLED=true
+
+secretGenerator:
+  - name: ai-coaching-secrets
+    behavior: merge
+    literals:
+      - JWT_SECRET=production-jwt-secret-change-this
+      - JWT_REFRESH_SECRET=production-refresh-secret-change-this
+      - API_KEY_SECRET=production-api-key-secret-change-this
+
+patches:
+  - target:
+      kind: Deployment
+      name: ai-coaching-gateway
+    patch: |-
+      - op: replace
+        path: /spec/replicas
+        value: 3
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/requests/cpu
+        value: "1000m"
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/requests/memory
+        value: "2Gi"
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/limits/cpu
+        value: "4000m"
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/limits/memory
+        value: "8Gi"
+
+  - target:
+      kind: Deployment
+      name: ai-coaching-frontend
+    patch: |-
+      - op: replace
+        path: /spec/replicas
+        value: 3
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/requests/cpu
+        value: "500m"
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/requests/memory
+        value: "1Gi"
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/limits/cpu
+        value: "2000m"
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/limits/memory
+        value: "4Gi"
+
+  - target:
+      kind: StatefulSet
+      name: ai-coaching-postgres
+    patch: |-
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/requests/cpu
+        value: "1000m"
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/requests/memory
+        value: "4Gi"
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/limits/cpu
+        value: "4000m"
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/limits/memory
+        value: "16Gi"
+
+  - target:
+      kind: StatefulSet
+      name: ai-coaching-redis
+    patch: |-
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/requests/cpu
+        value: "500m"
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/requests/memory
+        value: "2Gi"
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/limits/cpu
+        value: "2000m"
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/limits/memory
+        value: "8Gi"
+
+vars:
+  - name: POSTGRES_HOST
+    objref:
+      kind: Service
+      name: ai-coaching-postgres-service
+      apiVersion: v1
+    fieldref:
+      fieldpath: metadata.name
+  - name: REDIS_HOST
+    objref:
+      kind: Service
+      name: ai-coaching-redis-service
+      apiVersion: v1
+    fieldref:
+      fieldpath: metadata.name
+  - name: NATS_HOST
+    objref:
+      kind: Service
+      name: ai-coaching-nats-service
+      apiVersion: v1
+    fieldref:
+      fieldpath: metadata.name
+  - name: MINIO_HOST
+    objref:
+      kind: Service
+      name: ai-coaching-minio-service
+      apiVersion: v1
+    fieldref:
+      fieldpath: metadata.name

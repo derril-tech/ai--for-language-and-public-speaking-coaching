@@ -1,0 +1,171 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ai-coaching-frontend
+  namespace: ai-coaching
+  labels:
+    app: ai-coaching-frontend
+    version: v1.0.0
+spec:
+  replicas: 3
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      app: ai-coaching-frontend
+  template:
+    metadata:
+      labels:
+        app: ai-coaching-frontend
+        version: v1.0.0
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "3000"
+        prometheus.io/path: "/api/metrics"
+    spec:
+      containers:
+      - name: frontend
+        image: ai-coaching/frontend:latest
+        imagePullPolicy: Always
+        ports:
+        - containerPort: 3000
+          name: http
+        env:
+        - name: NODE_ENV
+          valueFrom:
+            configMapKeyRef:
+              name: ai-coaching-config
+              key: NODE_ENV
+        - name: PORT
+          valueFrom:
+            configMapKeyRef:
+              name: ai-coaching-config
+              key: FRONTEND_PORT
+        - name: NEXT_PUBLIC_API_URL
+          value: "https://api.ai-coaching.com"
+        - name: NEXT_PUBLIC_WS_URL
+          value: "wss://api.ai-coaching.com"
+        - name: NEXT_PUBLIC_SENTRY_DSN
+          valueFrom:
+            secretKeyRef:
+              name: ai-coaching-secrets
+              key: SENTRY_DSN
+        - name: NEXT_PUBLIC_GA_ID
+          valueFrom:
+            configMapKeyRef:
+              name: ai-coaching-config
+              key: GOOGLE_ANALYTICS_ID
+        - name: NEXT_PUBLIC_MIXPANEL_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: ai-coaching-secrets
+              key: MIXPANEL_TOKEN
+        resources:
+          requests:
+            cpu: 250m
+            memory: 512Mi
+          limits:
+            cpu: 1000m
+            memory: 2Gi
+        livenessProbe:
+          httpGet:
+            path: /api/health
+            port: 3000
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /api/health
+            port: 3000
+          initialDelaySeconds: 5
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 3
+        volumeMounts:
+        - name: logs
+          mountPath: /app/logs
+        - name: temp
+          mountPath: /app/temp
+      volumes:
+      - name: logs
+        emptyDir: {}
+      - name: temp
+        emptyDir: {}
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1001
+        fsGroup: 1001
+      imagePullSecrets:
+      - name: registry-secret
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ai-coaching-frontend-service
+  namespace: ai-coaching
+  labels:
+    app: ai-coaching-frontend
+spec:
+  type: ClusterIP
+  ports:
+  - port: 80
+    targetPort: 3000
+    protocol: TCP
+    name: http
+  selector:
+    app: ai-coaching-frontend
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: ai-coaching-frontend-ingress
+  namespace: ai-coaching
+  annotations:
+    kubernetes.io/ingress.class: "nginx"
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/proxy-body-size: "100m"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "300"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "300"
+    nginx.ingress.kubernetes.io/configuration-snippet: |
+      location /_next/static/ {
+        expires 1y;
+        add_header Cache-Control "public, immutable";
+      }
+      location /static/ {
+        expires 1y;
+        add_header Cache-Control "public, immutable";
+      }
+spec:
+  tls:
+  - hosts:
+    - ai-coaching.com
+    - www.ai-coaching.com
+    secretName: ai-coaching-frontend-tls
+  rules:
+  - host: ai-coaching.com
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: ai-coaching-frontend-service
+            port:
+              number: 80
+  - host: www.ai-coaching.com
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: ai-coaching-frontend-service
+            port:
+              number: 80

@@ -1,0 +1,224 @@
+groups:
+  - name: ai-coaching-alerts
+    rules:
+      # High error rate alerts
+      - alert: HighErrorRate
+        expr: rate(http_errors_total[5m]) > 0.1
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High error rate detected"
+          description: "Error rate is {{ $value }} errors per second for the last 5 minutes"
+
+      - alert: CriticalErrorRate
+        expr: rate(http_errors_total[5m]) > 0.5
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Critical error rate detected"
+          description: "Error rate is {{ $value }} errors per second for the last 5 minutes"
+
+      # Worker failure alerts
+      - alert: WorkerFailure
+        expr: rate(worker_processing_errors_total[5m]) > 0
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Worker processing errors detected"
+          description: "Worker {{ $labels.worker_type }} has {{ $value }} errors per second"
+
+      - alert: WorkerDown
+        expr: up{job=~".*worker.*"} == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Worker is down"
+          description: "Worker {{ $labels.job }} has been down for more than 1 minute"
+
+      # High latency alerts
+      - alert: HighLatency
+        expr: histogram_quantile(0.95, rate(http_request_duration_seconds_bucket[5m])) > 2
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High latency detected"
+          description: "95th percentile latency is {{ $value }} seconds"
+
+      - alert: CriticalLatency
+        expr: histogram_quantile(0.95, rate(http_request_duration_seconds_bucket[5m])) > 5
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Critical latency detected"
+          description: "95th percentile latency is {{ $value }} seconds"
+
+      # Database alerts
+      - alert: DatabaseDown
+        expr: up{job="postgres"} == 0
+        for: 30s
+        labels:
+          severity: critical
+        annotations:
+          summary: "Database is down"
+          description: "PostgreSQL database is not responding"
+
+      - alert: DatabaseHighConnections
+        expr: pg_stat_database_numbackends > 80
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High database connections"
+          description: "Database has {{ $value }} active connections"
+
+      # Redis alerts
+      - alert: RedisDown
+        expr: up{job="redis"} == 0
+        for: 30s
+        labels:
+          severity: critical
+        annotations:
+          summary: "Redis is down"
+          description: "Redis cache is not responding"
+
+      - alert: RedisHighMemory
+        expr: redis_memory_used_bytes / redis_memory_max_bytes > 0.8
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High Redis memory usage"
+          description: "Redis memory usage is {{ $value | humanizePercentage }}"
+
+      # NATS alerts
+      - alert: NATSDown
+        expr: up{job="nats"} == 0
+        for: 30s
+        labels:
+          severity: critical
+        annotations:
+          summary: "NATS is down"
+          description: "NATS message broker is not responding"
+
+      # Cache performance alerts
+      - alert: LowCacheHitRate
+        expr: rate(cache_hits_total[5m]) / (rate(cache_hits_total[5m]) + rate(cache_misses_total[5m])) < 0.7
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Low cache hit rate"
+          description: "Cache hit rate is {{ $value | humanizePercentage }}"
+
+      # WebSocket alerts
+      - alert: WebSocketConnectionsHigh
+        expr: websocket_connections_active > 1000
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High WebSocket connections"
+          description: "{{ $value }} active WebSocket connections"
+
+      # Processing pipeline alerts
+      - alert: ProcessingBacklog
+        expr: rate(worker_processing_total[5m]) < 0.1
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Processing backlog detected"
+          description: "Worker processing rate is {{ $value }} per second"
+
+      # Session processing alerts
+      - alert: SessionProcessingFailure
+        expr: rate(session_events_total{event_type="processing_failed"}[5m]) > 0
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Session processing failures"
+          description: "{{ $value }} session processing failures per second"
+
+      # External API alerts
+      - alert: ExternalAPIFailure
+        expr: rate(external_api_errors_total[5m]) > 0.1
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "External API failures"
+          description: "{{ $value }} external API errors per second for {{ $labels.service }}"
+
+      # System resource alerts
+      - alert: HighCPUUsage
+        expr: 100 - (avg by(instance) (irate(node_cpu_seconds_total{mode="idle"}[5m])) * 100) > 80
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High CPU usage"
+          description: "CPU usage is {{ $value }}%"
+
+      - alert: HighMemoryUsage
+        expr: (node_memory_MemTotal_bytes - node_memory_MemAvailable_bytes) / node_memory_MemTotal_bytes * 100 > 85
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High memory usage"
+          description: "Memory usage is {{ $value }}%"
+
+      - alert: HighDiskUsage
+        expr: (node_filesystem_size_bytes - node_filesystem_free_bytes) / node_filesystem_size_bytes * 100 > 85
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High disk usage"
+          description: "Disk usage is {{ $value }}%"
+
+      # Container alerts
+      - alert: ContainerRestarting
+        expr: increase(container_restarts_total[5m]) > 0
+        for: 1m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Container restarting"
+          description: "Container {{ $labels.name }} has restarted {{ $value }} times in the last 5 minutes"
+
+      # OpenTelemetry alerts
+      - alert: OpenTelemetryDown
+        expr: up{job="otel-collector"} == 0
+        for: 30s
+        labels:
+          severity: critical
+        annotations:
+          summary: "OpenTelemetry collector is down"
+          description: "OpenTelemetry collector is not responding"
+
+      # Business metrics alerts
+      - alert: LowSessionSuccessRate
+        expr: rate(session_events_total{event_type="completed"}[1h]) / rate(session_events_total[1h]) < 0.8
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Low session success rate"
+          description: "Session success rate is {{ $value | humanizePercentage }}"
+
+      - alert: NoActiveUsers
+        expr: websocket_connections_active == 0
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "No active users"
+          description: "No active WebSocket connections for 10 minutes"
